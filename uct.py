@@ -2,57 +2,99 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 
 import gym
+import tqdm
+import numpy as np
 
 
-N_ACTIONS = 18
+N_RUNS = 100000
+MAX_DEPTH = 750
+C_PUCT = 1.0
+GAMMA = 0.99
 
 
 @dataclass(eq=False)
 class Node:
     parent: 'Node'
+    n_actions: int
+
+    n: List[int] = field(default_factory=list)
+
+    p_hat: List[float] = field(default_factory=list)
+    v_hat: float = 0
+
     children: Dict[int, 'Node'] = field(default_factory=dict)
 
-    q: float = 0   # current value estimate
-    w: float = 0   # total value of my visits
-    n: List[int] = 0     # total number of visits in my state
-    p: List[float] = 0   # my prior probability of visit
+    q: List[float] = field(default_factory=list)
+
+    def __post_init__(self):
+        self.n = [0] * self.n_actions
+        self.p_hat = [1./self.n_actions] * self.n_actions
+        self.q = [-0.1] + [0.0] * (self.n_actions - 1)
 
 
-def node_is_terminal(n: Node, env: gym.Env, depth: int):
-    return False
-
-
-def traverse_back_up(n: Node):
-    pass
-
-
-def visit(n: Node, env: gym.Env, depth: int):
-    if node_is_terminal(n, env, depth):
-        # do some things that you do in the leaf node
-        # for example estimate value
-        # or get terminal value from the environment
-
-        pass
+def visit(node: Node, env: gym.Env, depth: int):
+    if depth == MAX_DEPTH:
+        return node.v_hat
     else:
-        #
+        # choose the best action
+        max_u, best_a = -float("inf"), -1
+        for a in range(env.action_space.n):
+            q = node.q[a]
+            u = q + C_PUCT * node.p_hat[a] * np.sqrt(sum(node.n)) / (1 + node.n[a])
 
-        pass
+            if u > max_u:
+                max_u = u
+                best_a = a
+        a = best_a
+
+        # execute the action
+        obs, rew, done, _ = env.step(a)
+        # env.render()
+
+        if rew != 0:
+            print("rew!")
+
+        if done:
+            return rew
+        else:
+            # maybe make the node we are visiting
+            if a not in node.children:
+                # after we will hook up policy here
+                # we will initialize p_hat, v_hat = nnet.predict(obs)
+                node.children[a] = Node(node, env.action_space.n)
+
+            # visit the node below us corresponding to the best action
+            v = GAMMA * visit(node.children[a], env, depth + 1) + rew
+            node.q[a] = (node.n[a] * node.q[a] + v) / (node.n[a] + 1)
+            node.n[a] += 1
+
+            return v
 
 
+def choose_move(env: gym.Env):
+    start_state = env.env.clone_full_state()
 
-def search():
-    """
-    1.
+    root = Node(None, env.action_space.n)
 
-    1. choose node to visit
+    for _ in tqdm.tqdm(range(N_RUNS)):
+        # reset gym to the original state
+        env.reset()
+        env.env.restore_full_state(start_state)
+        visit(root, env, 0)
+
+    env.env.restore_full_state(start_state)
+
+    print("="*80)
+    print(root.q)
+    print(root.n)
+    action = np.argmax(np.array(root.q))
+    print(f"Choosing {action}")
+    print("="*80)
+
+    return action
 
 
-    :return:
-    """
-
-    pass
-
-
+"""
 def search(s, game, nnet):
     if game.gameEnded(s): return -game.gameReward(s)
 
@@ -77,11 +119,24 @@ def search(s, game, nnet):
 
 
     return -v
+"""
 
 
 if __name__ == '__main__':
-    pass
-    """
-    def v
-    1. choose 
-    """
+
+    env = gym.make('MontezumaRevenge-v4')
+    # env = gym.make('Pong-v4')
+
+    env.reset()
+    env.step(1)
+    env.step(2)
+    done = False
+
+    for i in range(30):
+        env.step(0)
+        # env.render()
+
+    while not done:
+        move = choose_move(env)
+        env.step(move)
+        # env.render()

@@ -5,6 +5,7 @@ name = "pypi"
 
 [packages]
 gym = {extras = ["atari"]}
+tqdm = "*"
 
 [dev-packages]
 
